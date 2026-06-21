@@ -1,4 +1,3 @@
-import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -477,10 +476,31 @@ export default function MagicMirrorPage() {
                 onClick={() => fileInputRef.current?.click()}
               >
                 <input ref={fileInputRef} type="file" accept="application/pdf" multiple className="hidden" onChange={handleFileSelect} />
+                {/* 粘贴图片预览（显示在上传区域内） */}
+                {pastedImages.length > 0 && (
+                  <div className="flex justify-center gap-2 mb-3 flex-wrap">
+                    {pastedImages.map((img, i) => (
+                      <div key={i} className="relative group">
+                        <img
+                          src={URL.createObjectURL(img)}
+                          alt={`粘贴图片${i + 1}`}
+                          className="w-14 h-14 object-cover rounded border-2 border-blue-300"
+                        />
+                        <button
+                          onClick={(e) => { e.stopPropagation(); removePastedImage(i); }}
+                          className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full text-xs flex items-center justify-center"
+                        >×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
                 <div className="flex flex-col items-center gap-2 text-slate-500">
                   <Plus className="w-8 h-8" />
                   <p className="text-sm font-medium">拖拽 PDF 或点击上传（最多5个）</p>
                   <p className="text-xs">支持：PDF 文件（文字或扫描件）</p>
+                  <p className="text-xs text-blue-500 mt-1">
+                    💡 也可直接 <kbd className="px-1 py-0.5 bg-blue-100 rounded text-xs font-mono border border-blue-200">Ctrl+V</kbd> 粘贴图片（名片、截图等）
+                  </p>
                 </div>
               </div>
 
@@ -499,31 +519,6 @@ export default function MagicMirrorPage() {
                   ))}
                 </div>
               )}
-
-              {/* 粘贴图片提示 */}
-              <div className="border border-dashed border-blue-200 rounded-lg p-3 bg-blue-50">
-                <p className="text-xs text-blue-600 text-center">
-                  💡 直接 <kbd className="px-1 py-0.5 bg-blue-100 rounded text-xs font-mono">Ctrl+V</kbd> 粘贴图片（名片、截图等），最多5张
-                  {pastedImages.length > 0 && ` · 已粘贴 ${pastedImages.length} 张`}
-                </p>
-                {pastedImages.length > 0 && (
-                  <div className="flex gap-2 mt-2 flex-wrap">
-                    {pastedImages.map((img, i) => (
-                      <div key={i} className="relative group">
-                        <img
-                          src={URL.createObjectURL(img)}
-                          alt={`粘贴图片${i + 1}`}
-                          className="w-16 h-16 object-cover rounded border border-blue-200"
-                        />
-                        <button
-                          onClick={() => removePastedImage(i)}
-                          className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                        >×</button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
 
               {pdfStatus && (
                 <div className="flex items-center gap-2 text-sm text-slate-500 bg-slate-50 rounded px-3 py-2">
@@ -553,133 +548,153 @@ export default function MagicMirrorPage() {
 
             {/* 生成按钮 */}
             {!user && parseInt(guestUsed || '0') >= 3 && (
-              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
-                <AlertCircle className="w-4 h-4 inline mr-1" />免费额度已用完，请登录后继续
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700 text-center">
+                今日免费次数已用完 · <button onClick={() => setShowAuth(true)} className="underline font-medium">登录</button> 或 <button onClick={() => setShowAuth(true)} className="underline font-medium">注册</button>解锁更多次数
               </div>
             )}
             <Button
-              size="lg"
-              className="w-full text-base"
-              disabled={!canGenerate || generating || (!user && parseInt(guestUsed || '0') >= 3)}
-              onClick={() => {
-                if (!user) {
-                  setShowAuth(true);
-                } else {
-                  doGenerate();
-                }
-              }}
+              className="w-full text-base py-6 bg-blue-600 hover:bg-blue-700"
+              onClick={doGenerate}
+              disabled={generating || !canGenerate}
             >
-              {generating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> 生成中…</> : user ? <><Sparkles className="w-4 h-4 mr-2" /> 启动魔镜筛查</> : '登录后启动筛查'}
+              {generating ? (
+                <>
+                  <Loader2 className="w-5 h-5 mr-2 animate-spin" />
+                  {generatingPhase === 'searching' ? '正在筛查 …' : '正在分析 …'}
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-5 h-5 mr-2" />
+                  启动魔镜筛查
+                </>
+              )}
             </Button>
+
+            {/* 平台状态 */}
+            {generating && (
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                  {PLATFORMS.map(p => {
+                    const state = platformStates[p.id] ?? { status: 'pending', count: 0 };
+                    return (
+                      <div key={p.id} className="flex items-center gap-2 bg-white border rounded-lg px-3 py-2 text-sm">
+                        <PlatformIcon status={state.status} />
+                        <span className="flex-1 truncate">{p.flag} {p.name}</span>
+                        {state.status === 'pending' && <span className="text-xs text-slate-400">等待</span>}
+                        {state.status === 'searching' && <span className="text-xs text-yellow-600">搜索中</span>}
+                        {state.status === 'completed' && state.count > 0 && <Badge variant="outline" className="text-xs">{state.count}条</Badge>}
+                        {state.status === 'completed' && state.count === 0 && <span className="text-xs text-slate-400">无</span>}
+                        {state.status === 'limited' && <span className="text-xs text-slate-400">需人工</span>}
+                        {state.status === 'failed' && <span className="text-xs text-red-400">失败</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+                {pdfStatus && (
+                  <div className="flex items-center gap-2 text-sm text-slate-500 bg-slate-50 rounded px-3 py-2">
+                    <Loader2 className="w-4 h-4 animate-spin" />
+                    {pdfStatus}
+                  </div>
+                )}
+              </div>
+            )}
           </CardContent>
         </Card>
 
-        {/* 平台进度 */}
-        {generating && (
-          <Card className="border-primary/30">
-            <CardContent className="p-5">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="font-semibold text-sm flex items-center gap-2">
-                  <span className="text-lg">🤖</span> 魔镜正在为您检索
-                </h3>
-                <Badge variant={generatingPhase === 'analyzing' ? 'default' : 'secondary'} className="text-xs">
-                  {generatingPhase === 'searching' ? '🔍 平台检索中' : '🌱 AI分析报告中'}
-                </Badge>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                {PLATFORMS.map(p => (
-                  <div key={p.id} className="flex items-center gap-2 text-sm">
-                    <PlatformIcon status={platformStates[p.id]?.status || 'pending'} />
-                    <span className="text-slate-600">{p.name}</span>
-                    {p.limited && <span className="text-xs text-slate-400">·需人工</span>}
-                    {platformStates[p.id]?.count > 0 && <span className="text-xs text-blue-500 ml-auto">{platformStates[p.id]!.count}</span>}
-                  </div>
-                ))}
-              </div>
-              <div className="flex items-center gap-2 mt-4 pt-4 border-t text-xs text-slate-400">
-                <Shield className="w-3 h-3" /> <span>数据仅供参考，不构成法律意见</span>
-              </div>
-            </CardContent>
-          </Card>
-        )}
+        {/* 说明 */}
+        <div className="text-center text-xs text-slate-400 space-y-1">
+          <p>⚠️ 本工具仅供参考，不构成法律意见。重要决策建议咨询持牌律师。</p>
+          <p>数据来源：公开网页信息，结果仅供参考，不保证准确性。</p>
+        </div>
+      </div>
 
-        {/* Auth Dialog */}
-        {showAuth && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <Card className="w-full max-w-sm">
-              <CardHeader className="pb-2">
-                <div className="flex justify-between items-center">
-                  <CardTitle className="text-lg">登录 / 注册</CardTitle>
-                  <button onClick={() => setShowAuth(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
-                </div>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                {!showForgot ? (
-                  <>
-                    <div className="space-y-2">
-                      <Label>手机号</Label>
-                      <Input placeholder="+1 234 567 8900" value={regPhone} onChange={e => setRegPhone(e.target.value)} />
-                    </div>
-                    <div className="space-y-2">
-                      <Label>密码</Label>
-                      <Input type="password" value={regPassword} onChange={e => setRegPassword(e.target.value)} />
-                    </div>
-                    <Button className="w-full" onClick={handleRegister} disabled={registering}>
-                      {registering ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> 注册中…</> : '注册'}
-                    </Button>
-                    <div className="border-t pt-3 space-y-2">
-                      <Input type="email" placeholder="邮箱" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} />
-                      <Input type="password" placeholder="密码" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} />
+      {/* 登录/注册弹窗 */}
+      {showAuth && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <Card className="w-full max-w-sm">
+            <CardHeader className="pb-2">
+              <div className="flex justify-between items-center">
+                <CardTitle className="text-lg">登录 / 注册</CardTitle>
+                <button onClick={() => setShowAuth(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+              </div>
+              <CardDescription className="text-xs">登录后可解锁更多筛查次数，报告永久保存</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {!showForgot ? (
+                <>
+                  {!resetSent ? (
+                    <>
+                      <div className="space-y-2">
+                        <Label className="text-xs">手机号 / 邮箱</Label>
+                        <Input placeholder="登录邮箱" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} />
+                      </div>
+                      <div className="space-y-2">
+                        <div className="flex justify-between items-center">
+                          <Label className="text-xs">密码</Label>
+                          <button onClick={() => setShowForgot(true)} className="text-xs text-blue-500 hover:underline">忘记密码？</button>
+                        </div>
+                        <Input type="password" placeholder="密码" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} />
+                      </div>
                       <Button className="w-full" onClick={handleLogin} disabled={loggingIn}>
                         {loggingIn ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> 登录中…</> : '登录'}
                       </Button>
-                      <button onClick={() => { setShowForgot(true); setResetSent(false); }} className="w-full text-xs text-center text-slate-400 hover:text-slate-600">忘记密码？</button>
+                      <div className="text-center text-xs text-slate-400">
+                        没有账号？<button onClick={() => { setRegName(''); setRegEmail(''); setRegPassword(''); setRegPhone(''); setRegName_(''); }} className="text-blue-500 hover:underline">立即注册</button>
+                      </div>
+                      <div className="relative">
+                        <div className="absolute inset-0 flex items-center"><div className="w-full border-t" /></div>
+                        <div className="relative flex justify-center text-xs uppercase"><span className="bg-white px-2 text-slate-500">或</span></div>
+                      </div>
+                      <Button variant="outline" className="w-full" onClick={() => { setRegName(''); setRegEmail(''); setRegPassword(''); setRegPhone(''); setRegName_(''); }}>注册新账号</Button>
+                    </>
+                  ) : (
+                    <div className="text-center py-4 space-y-2">
+                      <CheckCircle2 className="w-8 h-8 text-green-500 mx-auto" />
+                      <p className="font-medium">重置链接已发送</p>
+                      <p className="text-sm text-slate-500">请查收邮箱 {resetEmail} 中的重置邮件</p>
+                      <Button variant="outline" className="w-full" onClick={() => { setShowForgot(false); setResetSent(false); }}>返回登录</Button>
                     </div>
-                  </>
-                ) : (
-                  <div className="py-4 text-center space-y-3">
-                    {!resetSent ? (
-                      <>
-                        <p className="text-sm text-slate-600">输入注册邮箱，重置密码</p>
-                        <Input type="email" placeholder="your@email.com" value={resetEmail} onChange={e => setResetEmail(e.target.value)} />
-                        <Button className="w-full" onClick={handleResetPassword} disabled={resetting}>
-                          {resetting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> 发送中…</> : '发送重置链接'}
-                        </Button>
-                      </>
-                    ) : (
-                      <div className="text-green-600 text-sm">✅ 邮件已发送，请查收</div>
-                    )}
-                    <button onClick={() => setShowForgot(false)} className="text-xs text-slate-400 hover:text-slate-600">返回登录</button>
+                  )}
+                </>
+              ) : (
+                <div className="space-y-3">
+                  <div className="space-y-2">
+                    <Label className="text-xs">邮箱地址</Label>
+                    <Input type="email" placeholder="your@email.com" value={resetEmail} onChange={e => setResetEmail(e.target.value)} />
                   </div>
-                )}
-              </CardContent>
-            </Card>
-          </div>
-        )}
+                  <Button className="w-full" onClick={handleResetPassword} disabled={resetting}>
+                    {resetting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> 发送中…</> : '发送重置链接'}
+                  </Button>
+                  <Button variant="ghost" className="w-full text-sm" onClick={() => setShowForgot(false)}>返回登录</Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </div>
+      )}
 
-        {/* Paywall */}
-        {showPaywall && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
-            <Card className="w-full max-w-sm">
-              <CardContent className="p-6 text-center space-y-4">
-                <div className="text-4xl">🔒</div>
-                <div>
-                  <h3 className="font-semibold text-lg">完整报告解锁</h3>
-                  <p className="text-2xl font-bold text-blue-600 mt-1">¥99 / 次</p>
-                  <p className="text-xs text-slate-400 mt-1">含详细风险分析 · 行动清单 · 法律建议</p>
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={() => setPayMethod('wechat')} className={`flex-1 py-2 rounded-lg border text-sm ${payMethod === 'wechat' ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-200'}`}>微信购买</button>
-                  <button onClick={() => setPayMethod('alipay')} className={`flex-1 py-2 rounded-lg border text-sm ${payMethod === 'alipay' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200'}`}>支付宝购买</button>
-                </div>
-                <Button className="w-full" onClick={handlePayment} disabled={creatingOrder}>
-                  {creatingOrder ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> 创建订单…</> : payMethod === 'wechat' ? '微信支付 ¥99' : '支付宝支付 ¥99'}
-                </Button>
-              </CardContent>
-            </Card>
-          </div>
-        )}
-      </div>
+      {/* 支付弹窗 */}
+      {showPaywall && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+          <Card className="w-full max-w-sm">
+            <CardContent className="p-6 text-center space-y-4">
+              <div className="text-4xl">🔒</div>
+              <div>
+                <h3 className="font-semibold text-lg">完整报告解锁</h3>
+                <p className="text-2xl font-bold text-blue-600 mt-1">¥99 / 次</p>
+                <p className="text-xs text-slate-400 mt-1">含详细风险分析 · 行动清单 · 法律建议</p>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => setPayMethod('wechat')} className={`flex-1 py-2 rounded-lg border text-sm ${payMethod === 'wechat' ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-200'}`}>微信购买</button>
+                <button onClick={() => setPayMethod('alipay')} className={`flex-1 py-2 rounded-lg border text-sm ${payMethod === 'alipay' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200'}`}>支付宝购买</button>
+              </div>
+              <Button className="w-full" onClick={handlePayment} disabled={creatingOrder}>
+                {creatingOrder ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> 创建订单…</> : payMethod === 'wechat' ? '微信支付 ¥99' : '支付宝支付 ¥99'}
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }
@@ -699,10 +714,5 @@ function blobToBase64(file: File): Promise<string> {
 
 // 辅助：File 图标
 function FileIcon({ className }: { className?: string }) {
-  return (
-    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
-      <polyline points="14,2 14,8 20,8" />
-    </svg>
-  );
+  return <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" /><polyline points="14 2 14 8 20 8" /></svg>;
 }
