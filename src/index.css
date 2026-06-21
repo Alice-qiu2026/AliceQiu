@@ -1,0 +1,258 @@
+/* stylelint-disable */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --radius: 0.25rem;
+    --background: 210 17% 98%;
+    --foreground: 220 25% 10%;
+    --card: 0 0% 100%;
+    --card-foreground: 220 25% 10%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 220 25% 10%;
+    --primary: 215 55% 24%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 210 20% 94%;
+    --secondary-foreground: 215 55% 24%;
+    --muted: 210 15% 93%;
+    --muted-foreground: 215 16% 47%;
+    --accent: 40 52% 51%;
+    --accent-foreground: 0 0% 100%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 214 20% 88%;
+    --input: 214 20% 88%;
+    --ring: 215 55% 24%;
+    --chart-1: 215 55% 24%;
+    --chart-2: 40 52% 51%;
+    --chart-3: 197 37% 24%;
+    --chart-4: 40 60% 60%;
+    --chart-5: 27 87% 67%;
+    --sidebar-background: 215 55% 24%;
+    --sidebar-foreground: 0 0% 100%;
+    --sidebar-primary: 40 52% 51%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 213 45% 30%;
+    --sidebar-accent-foreground: 0 0% 100%;
+    --sidebar-border: 213 40% 35%;
+    --sidebar-ring: 40 52% 51%;
+  }
+
+  .dark {
+    --background: 220 25% 8%;
+    --foreground: 210 20% 95%;
+    --card: 220 25% 12%;
+    --card-foreground: 210 20% 95%;
+    --popover: 220 25% 12%;
+    --popover-foreground: 210 20% 95%;
+    --primary: 40 52% 51%;
+    --primary-foreground: 220 25% 8%;
+    --secondary: 220 20% 18%;
+    --secondary-foreground: 210 20% 95%;
+    --muted: 220 20% 18%;
+    --muted-foreground: 215 15% 60%;
+    --accent: 40 52% 51%;
+    --accent-foreground: 220 25% 8%;
+    --destructive: 0 62% 30%;
+    --destructive-foreground: 0 0% 100%;
+    --border: 220 20% 20%;
+    --input: 220 20% 20%;
+    --ring: 40 52% 51%;
+    --chart-1: 40 52% 51%;
+    --chart-2: 215 55% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --sidebar-background: 220 25% 8%;
+    --sidebar-foreground: 210 20% 95%;
+    --sidebar-primary: 40 52% 51%;
+    --sidebar-primary-foreground: 220 25% 8%;
+    --sidebar-accent: 220 20% 15%;
+    --sidebar-accent-foreground: 210 20% 95%;
+    --sidebar-border: 220 20% 15%;
+    --sidebar-ring: 40 52% 51%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--border)) transparent;
+  }
+
+  *::-webkit-scrollbar {
+    width: 6px;
+    background: transparent;
+  }
+
+  *::-webkit-scrollbar-thumb {
+    background: hsl(var(--border));
+    border-radius: 3px;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+  }
+}
+
+@layer utilities {
+  .gradient-text {
+    background: linear-gradient(135deg, hsl(var(--primary)), hsl(var(--accent)));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}
+
+/* 蓝仙女动画 */
+@keyframes fairy-float {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-2px) rotate(1deg);
+  }
+  50% {
+    transform: translateY(-1px) rotate(-0.5deg);
+  }
+  75% {
+    transform: translateY(-3px) rotate(0.5deg);
+  }
+}
+
+@keyframes fairy-wand {
+  0%, 100% {
+    transform: rotate(0deg) scale(1);
+  }
+  15% {
+    transform: rotate(3deg) scale(1.02);
+  }
+  30% {
+    transform: rotate(-2deg) scale(1.01);
+  }
+  45% {
+    transform: rotate(1deg) scale(1.02);
+  }
+  60% {
+    transform: rotate(0deg) scale(1);
+  }
+}
+
+@keyframes fairy-twinkle {
+  0%, 100% {
+    opacity: 0.6;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+.animate-fairy-float {
+  animation: fairy-float 3s ease-in-out infinite;
+}
+
+.animate-fairy-wand {
+  animation: fairy-wand 2.5s ease-in-out infinite;
+}
+
+.animate-fairy-twinkle {
+  animation: fairy-twinkle 1.5s ease-in-out infinite;
+}
+
+/* 蓝仙女眨眼动画 */
+@keyframes fairy-blink {
+  0%, 45%, 55%, 100% {
+    transform: translateX(-50%) scaleY(1);
+  }
+  50% {
+    transform: translateX(-50%) scaleY(0.1);
+  }
+}
+
+@keyframes fairy-blink-right {
+  0%, 48%, 58%, 100% {
+    transform: translateX(-50%) scaleY(1);
+  }
+  53% {
+    transform: translateX(-50%) scaleY(0.1);
+  }
+}
+
+@keyframes fairy-star-spin {
+  0% {
+    transform: rotate(0deg) scale(0.6);
+    opacity: 0.3;
+  }
+  25% {
+    transform: rotate(90deg) scale(1.2);
+    opacity: 1;
+  }
+  50% {
+    transform: rotate(180deg) scale(0.8);
+    opacity: 0.5;
+  }
+  75% {
+    transform: rotate(270deg) scale(1.1);
+    opacity: 1;
+  }
+  100% {
+    transform: rotate(360deg) scale(0.6);
+    opacity: 0.3;
+  }
+}
+
+@keyframes fairy-star-float {
+  0%, 100% {
+    transform: translateY(0) translateX(0) scale(0.5);
+    opacity: 0.2;
+  }
+  30% {
+    transform: translateY(-6px) translateX(3px) scale(1);
+    opacity: 1;
+  }
+  60% {
+    transform: translateY(-10px) translateX(-2px) scale(0.7);
+    opacity: 0.6;
+  }
+  80% {
+    transform: translateY(-4px) translateX(1px) scale(0.8);
+    opacity: 0.4;
+  }
+}
+
+@keyframes fairy-glow-pulse {
+  0%, 100% {
+    box-shadow: 0 0 4px 1px rgba(197, 154, 63, 0.15);
+  }
+  50% {
+    box-shadow: 0 0 10px 3px rgba(197, 154, 63, 0.35);
+  }
+}
+
+.fairy-blink {
+  animation: fairy-blink 3.5s ease-in-out infinite;
+}
+
+.fairy-blink-delay {
+  animation: fairy-blink-right 3.5s ease-in-out infinite;
+  animation-delay: 0.1s;
+}
+
+.fairy-star {
+  animation: fairy-star-spin 2s ease-in-out infinite;
+}
+
+.fairy-star-delay {
+  animation: fairy-star-float 3s ease-in-out infinite;
+  animation-delay: 0.5s;
+}
+
+.fairy-glow {
+  animation: fairy-glow-pulse 2.5s ease-in-out infinite;
+}
