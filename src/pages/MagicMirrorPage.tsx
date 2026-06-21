@@ -1,742 +1,708 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '@/contexts/AuthContext';
+import { useAuth } from '../contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Textarea } from '@/components/ui/textarea';
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog';
 import { Badge } from '@/components/ui/badge';
-import { Upload, FileText, Loader2, X, CheckCircle2, AlertCircle, Clock, Lock, Search } from 'lucide-react';
+import { Textarea } from '@/components/ui/textarea';
+import { Loader2, Bot, Shield, AlertCircle, CheckCircle2, XCircle, X, Plus, Search, Sparkles, CreditCard, QrCode, Copy } from 'lucide-react';
 import { toast } from 'sonner';
-import { createReport, updateFreeReports, createPaymentOrder, createAlipayOrder } from '@/services/api';
-import { supabase } from '@/db/supabase';
-import type { ReportData } from '@/types/types';
+import { createReport } from '../lib/api';
+import { supabase } from '../lib/supabase';
+import type { ReportData } from '../types';
 import { useTranslation } from 'react-i18next';
 
-// 平台状态图标（必须定义在组件外，避免每次渲染创建新组件类型）
-const statusLabel: Record<PlatformStatus, string> = {
-  pending:   '等待中',
-  searching: '查询中…',
+const statusLabel: Record<string, string> = {
+  pending: '等待中',
+  searching: '搜索中',
   completed: '完成',
-  limited:   '需人工核实',
-  failed:    '失败',
+  no_results: '无结果',
+  limited: '需人工',
+  failed: '失败',
 };
 
-function PlatformIcon({ status }: { status: PlatformStatus }) {
-  if (status === 'pending')   return <Clock className="w-4 h-4 text-muted-foreground" />;
-  if (status === 'searching') return <Search className="w-4 h-4 text-primary animate-pulse" />;
-  if (status === 'completed') return <CheckCircle2 className="w-4 h-4 text-green-600" />;
-  if (status === 'limited')   return <Lock className="w-4 h-4 text-amber-500" />;
-  return <AlertCircle className="w-4 h-4 text-destructive" />;
+function PlatformIcon({ status }: { status: string }) {
+  const cls = status === 'completed' ? 'text-green-500' : status === 'failed' || status === 'no_results' ? 'text-gray-400' : 'text-yellow-500';
+  if (status === 'completed') return <CheckCircle2 className={`w-4 h-4 ${cls}`} />;
+  if (status === 'failed' || status === 'no_results') return <XCircle className={`w-4 h-4 ${cls}`} />;
+  return <Search className={`w-4 h-4 animate-pulse ${cls}`} />;
 }
 
-// 平台列表
 const PLATFORMS = [
-  { id: 'baidu',       name: '百度搜索',        flag: '🔍' },
-  { id: 'google',      name: 'Google 搜索',     flag: '🌐' },
-  { id: 'weibo',       name: '微博',             flag: '📱' },
-  { id: 'zhihu',       name: '知乎',             flag: '💡' },
-  { id: 'wechat',      name: '微信公众号',        flag: '💬' },
-  { id: 'toutiao',     name: '今日头条',          flag: '📰' },
-  { id: 'douyin',      name: '抖音/TikTok',      flag: '🎵' },
-  { id: 'bilibili',    name: 'B站',              flag: '📺' },
-  { id: 'xiaohongshu', name: '小红书',            flag: '📕' },
-  { id: 'news',        name: '新闻媒体',          flag: '📡' },
-  { id: 'github',      name: 'GitHub',           flag: '💻' },
-  { id: 'pdf',         name: '上传文件分析',       flag: '📄' },
-  { id: 'tianyancha',  name: '天眼查',            flag: '🏢', limited: true },
-  { id: 'court',       name: '裁判文书网',         flag: '⚖️', limited: true },
-  { id: 'linkedin',    name: 'LinkedIn',          flag: '👔', limited: true },
+  { id: 'baidu', name: '百度搜索', flag: '🔍' },
+  { id: 'google', name: 'Google', flag: '🔍' },
+  { id: 'weibo', name: '微博', flag: '📣' },
+  { id: 'zhihu', name: '知乎', flag: '💬' },
+  [
+    { id: 'wechat', name: '微信公众号', flag: '💬' },
+    { id: 'toutiao', name: '今日头条', flag: '📰' },
+    { id: 'douyin', name: '抖音/TikTok', flag: '🎵' },
+    { id: 'bilibili', name: 'B站', flag: '📺' },
+    { id: 'xiaohongshu', name: '小红书', flag: '📕' },
+    { id: 'news', name: '新闻/年鉴', flag: '📡' },
+    { id: 'github', name: 'GitHub', flag: '🐙' },
+    { id: 'pdf', name: '能查的都在', flag: '📄' },
+    { id: 'tianyanchu', name: '天眼查', flag: '🔎', limited: true },
+    { id: 'court', name: '裁判文书', flag: '⚖️', limited: true },
+    { id: 'linkedin', name: 'LinkedIn', flag: '💼', limited: true },
+  ].flat(),
 ];
 
-type PlatformStatus = 'pending' | 'searching' | 'completed' | 'limited' | 'failed';
-
-interface PlatformState {
-  id: string;
-  name: string;
-  flag: string;
-  status: PlatformStatus;
-  count: number;
-  limited?: boolean;
-}
-
-// ── PDF 文字提取工具（客户端 OCR + 智能检测）─────────────────
-
-type PdfResult = {
-  name: string;
-  text: string;       // 提取的文字（发往后端的核心数据）
-  isScanned: boolean; // 是否为扫描件
-  pages: number;      // 页数
-};
-
-// 快速检测 PDF 是否为扫描件（读前 1KB 找 BT 文本块）
-async function isTextPdf(file: File): Promise<boolean> {
-  const slice = file.slice(0, 1024);
-  const text = await slice.text();
-  return text.includes('BT');
-}
-
-// 用 PDF.js（CDN）渲染 PDF → canvas → JPEG → OCR.space
-async function ocrPdfWithCanvas(file: File, onProgress?: (page: number, total: number) => void): Promise<string> {
-  // 动态导入 PDF.js（从 CDN，避免 npm install）
-  const pdfjsLib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs');
-  pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
-
-  const arrayBuffer = await file.arrayBuffer();
-  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-  const totalPages = pdf.numPages;
-  const pageTexts: string[] = [];
-
-  for (let i = 1; i <= totalPages; i++) {
-    onProgress?.(i, totalPages);
-    const page = await pdf.getPage(i);
-
-    // 渲染到 canvas（3x 分辨率保证 OCR 质量，原图 72dpi → 216dpi 精度）
-    const viewport = page.getViewport({ scale: 3 });
-    const canvas = document.createElement('canvas');
-    canvas.width = Math.floor(viewport.width);
-    canvas.height = Math.floor(viewport.height);
-    const ctx = canvas.getContext('2d')!;
-
-    await page.render({ canvasContext: ctx, viewport }).promise;
-
-    // canvas → JPEG（质量 0.92，约 500KB/页 vs 原 24MB）
-    const jpegDataUrl = canvas.toDataURL('image/jpeg', 0.92);
-    const jpegBase64 = jpegDataUrl.slice(jpegDataUrl.indexOf(',') + 1);
-
-    // 发给 OCR.space（免费 500次/小时，无需 API key）
-    const formData = new FormData();
-    formData.append('base64Image', `data:image/jpeg;base64,${jpegBase64}`);
-    formData.append('language', 'chs');          // 简体中文优先
-    formData.append('detectOrientation', 'true');
-    formData.append('scale', 'true');
-    formData.append('isTable', 'true');
-
-    try {
-      const ocrResp = await fetch('https://api.ocr.space/parse/image', {
-        method: 'POST',
-        headers: { 'apikey': 'K87964788988957' }, // OCR.space free tier key
-        body: formData,
-      });
-      const ocrJson = await ocrResp.json();
-      if (ocrJson?.ParsedResults?.[0]?.ParsedText) {
-        pageTexts.push(ocrJson.ParsedResults.map((r: { ParsedText: string }) => r.ParsedText).join('\n'));
-      } else if (ocrJson?.ErrorMessage) {
-        console.warn(`[OCR] page ${i} error:`, ocrJson.ErrorMessage);
+// ── PDF文字提取（pdfjs-dist + ocr.space）───────────────────
+function extractTextFromPdf(file: File): Promise<string> {
+  return new Promise((resolve) => {
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+      try {
+        const typedArray = new Uint8Array(e.target!.result as ArrayBuffer);
+        const pdfjsLib = (window as unknown as Record<string, unknown>).pdfjsLib;
+        if (!pdfjsLib) {
+          const script = document.createElement('script');
+          script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+          document.head.appendChild(script);
+          await new Promise(r => script.onload = r);
+          (window as unknown as Record<string, unknown>).pdfjsLib = pdfjsLib;
+        }
+        (window as unknown as Record<string, unknown>).pdfjsLib.GlobalWorkerOptions.workerSrc =
+          'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+        const pdf = await (window as unknown as Record<string, unknown>).pdfjsLib.getDocument(typedArray).promise;
+        const textParts: string[] = [];
+        const maxPages = Math.min(pdf.numPages, 10);
+        for (let i = 1; i <= maxPages; i++) {
+          const page = await pdf.getPage(i);
+          const content = await page.getTextContent();
+          textParts.push(content.items.map((item: { str?: string }) => item.str || '').join(' '));
+        }
+        resolve(textParts.join('\n'));
+      } catch {
+        resolve('');
       }
-    } catch (e) {
-      console.warn(`[OCR] page ${i} failed:`, e);
-    }
-  }
-
-  return pageTexts.join('\n\n--- 第X页 ---\n\n');
+    };
+    reader.onerror = () => resolve('');
+    reader.readAsArrayBuffer(file);
+  });
 }
 
-// 从 PDF 直接提取文字（文字层 PDF，无需 OCR）
-async function extractTextFromPdf(file: File): Promise<string> {
+async function ocrPdfWithCanvas(file: File, onProgress: (p: string) => void): Promise<string> {
+  onProgress('正在加载PDF解析器…');
   const arrayBuffer = await file.arrayBuffer();
-  const bytes = new Uint8Array(arrayBuffer);
-  const binaryStr = Array.from(bytes).map(b => String.fromCharCode(b)).join('');
+  const uint8 = new Uint8Array(arrayBuffer);
+  const binaryStr = Array.from(uint8).map(b => String.fromCharCode(b)).join('');
   const base64 = btoa(binaryStr);
-
-  // 发给后端 Edge Function 提取文字（复用已有逻辑）
-  // 但这里我们在客户端用 pdfjs-dist 做文字提取，避免走网络
-  try {
-    const pdfjsLib = await import('https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.min.mjs');
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@4.4.168/build/pdf.worker.min.mjs';
-    const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-    const texts: string[] = [];
-    for (let i = 1; i <= Math.min(pdf.numPages, 10); i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      const pageText = content.items
-        .map((item: { str?: string }) => (item as { str?: string }).str || '')
-        .join(' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      if (pageText) texts.push(pageText);
+  const pdfjsLib = (window as unknown as Record<string, unknown>).pdfjsLib;
+  if (!pdfjsLib) {
+    await new Promise<void>((resolve) => {
+      const s = document.createElement('script');
+      s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+      s.onload = () => resolve();
+      document.head.appendChild(s);
+    });
+    (window as unknown as Record<string, unknown>).pdfjsLib = pdfjsLib;
+  }
+  (window as unknown as Record<string, unknown>).pdfjsLib.GlobalWorkerOptions.workerSrc =
+    'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+  const pdf = await (window as unknown as Record<string, unknown>).pdfjsLib.getDocument({ data: uint8 }).promise;
+  const texts: string[] = [];
+  const maxPages = Math.min(pdf.numPages, 10);
+  for (let p = 1; p <= maxPages; p++) {
+    onProgress(`正在识别第 ${p}/${maxPages} 页…`);
+    const page = await pdf.getPage(p);
+    const scale = 3;
+    const viewport = page.getViewport({ scale });
+    const canvas = document.createElement('canvas');
+    canvas.width = viewport.width; canvas.height = viewport.height;
+    await page.render({ canvasContext: canvas.getContext('2d')!, viewport }).promise;
+    const dataUrl = canvas.toDataURL('image/jpeg', 0.92).split(',')[1];
+    try {
+      const fd = new FormData();
+      fd.append('base64Image', `data:image/jpeg;base64,${dataUrl}`);
+      fd.append('language', 'chi_sim+eng');
+      fd.append('isOverlayRequired', 'false');
+      fd.append('scale', 'true');
+      fd.append('detectOrientation', 'true');
+      fd.append('filetype', 'JPEG');
+      const res = await fetch('https://api.ocr.space/parse/image', {
+        method: 'POST',
+        headers: { apikey: 'K87958853888957' },
+        body: fd,
+      });
+      const d = await res.json();
+      if (d.ParsedResults?.[0]?.ParsedText) {
+        texts.push(d.ParsedResults[0].ParsedText);
+      }
+    } catch (err) {
+      console.warn('OCR error', err);
     }
-    return texts.join('\n');
-  } catch {
-    return '';
   }
+  return texts.join('\n');
 }
 
-// 智能处理 PDF：检测类型 → 走对应提取路径
-async function processPDFFile(
-  file: File,
-  onStatus?: (msg: string) => void
-): Promise<PdfResult> {
-  const name = file.name;
-  const sizeMB = file.size / 1024 / 1024;
-
-  // 超大文件（>5MB）直接当扫描件处理，避免加载到内存
-  if (sizeMB > 5) {
-    onStatus?.(`📄 ${name}（${sizeMB.toFixed(1)}MB）→ 检测为扫描件，开始 OCR…`);
-    const text = await ocrPdfWithCanvas(file, (p, t) => onStatus?.(`📄 OCR 第 ${p}/${t} 页…`));
-    return { name, text, isScanned: true, pages: 0 };
+async function processPDFFile(file: File, onStatus?: (s: string) => void): Promise<{ name: string; text: string; isScanned: boolean; pages: number }> {
+  const MB = file.size / 1024 / 1024;
+  if (MB > 5) { onStatus?.(`文件 ${file.name} 超过5MB，跳过`); return { name: file.name, text: '', isScanned: false, pages: 0 }; }
+  onStatus?.(`正在处理 ${file.name}…`);
+  const text = await extractTextFromPdf(file);
+  if (text.trim().length > 50) {
+    onStatus?.(`${file.name} 提取完成`);
+    return { name: file.name, text, isScanned: false, pages: 0 };
   }
-
-  // 小文件：先快速检测是否为文字层 PDF
-  const hasText = await isTextPdf(file);
-  if (hasText) {
-    onStatus?.(`📄 ${name} → 文字层 PDF，提取文字中…`);
-    const text = await extractTextFromPdf(file);
-    return { name, text: text || '', isScanned: false, pages: 0 };
-  }
-
-  // 小文件但无文字层 → 扫描件
-  onStatus?.(`📄 ${name} → 检测为扫描件，开始 OCR…`);
-  const text = await ocrPdfWithCanvas(file, (p, t) => onStatus?.(`📄 OCR 第 ${p}/${t} 页…`));
-  return { name, text, isScanned: true, pages: 0 };
+  onStatus?.(`${file.name} 疑似扫描件，转OCR…`);
+  const ocrText = await ocrPdfWithCanvas(file, (p) => onStatus?.(p));
+  return { name: file.name, text: ocrText, isScanned: true, pages: 0 };
 }
 
-// 处理所有文件：并发执行，每文件独立 OCR 进度
-async function processAllPDFFiles(
-  files: File[],
-  onFileStatus?: (name: string, msg: string) => void
-): Promise<{ results: PdfResult[]; totalText: string }> {
-  const results: PdfResult[] = [];
+async function processAllPDFFiles(files: File[], onFileStatus?: (name: string, status: string) => void) {
+  const results: { name: string; text: string; isScanned: boolean; pages: number }[] = [];
   for (const file of files) {
-    const result = await processPDFFile(file, (msg) => onFileStatus?.(file.name, msg));
+    const result = await processPDFFile(file, (s) => onFileStatus?.(file.name, s));
     results.push(result);
   }
-  const totalText = results.map(r => `[${r.name}]\n${r.text}`).join('\n\n');
+  const totalText = results.map(r => `[${r.name}]\n${r.text}`).join('\n');
   return { results, totalText };
 }
 
-// ─────────────────────────────────────────────────────────────
-
+// ── 主页面组件 ────────────────────────────────────────────
 export default function MagicMirrorPage() {
-  const { t } = useTranslation();
-  const { user, profile, signUpWithEmail, signInWithEmail, refreshProfile, resetPassword } = useAuth();
   const navigate = useNavigate();
-
+  const { user } = useAuth();
+  const { t } = useTranslation();
+  const [showPaywall, setShowPaywall] = useState(false);
+  const [creatingOrder, setCreatingOrder] = useState(false);
+  const [payMethod, setPayMethod] = useState<'wechat' | 'alipay'>('wechat');
+  const guestUsed = localStorage.getItem('guest_used') || '0';
+  const [regName, setRegName] = useState('');
+  const [regEmail, setRegEmail] = useState('');
+  const [regPassword, setRegPassword] = useState('');
+  const [regPhone, setRegPhone] = useState('');
+  const [regName_, setRegName_] = useState('');
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [resetEmail, setResetEmail] = useState('');
+  const [registering, setRegistering] = useState(false);
+  const [loggingIn, setLoggingIn] = useState(false);
+  const [resetting, setResetting] = useState(false);
+  const [showAuth, setShowAuth] = useState(false);
+  const [showForgot, setShowForgot] = useState(false);
+  const [resetSent, setResetSent] = useState(false);
   const [subjectName, setSubjectName] = useState('');
   const [relationship, setRelationship] = useState('');
   const [background, setBackground] = useState('');
   const [assets, setAssets] = useState('');
-  const [files, setFiles] = useState<File[]>([]);
   const [generating, setGenerating] = useState(false);
-  const [generatingPhase, setGeneratingPhase] = useState<'searching' | 'analyzing' | 'done'>('searching');
-  const [pdfStatus, setPdfStatus] = useState<string>('');
-  const [platformStates, setPlatformStates] = useState<PlatformState[]>(() =>
-    PLATFORMS.map(p => ({ ...p, status: 'pending' as PlatformStatus, count: 0 }))
-  );
+  const [generatingPhase, setGeneratingPhase] = useState<'searching' | 'analyzing'>('searching');
+  const [platformStates, setPlatformStates] = useState<Record<string, { status: string; count: number }>>({});
+  const [files, setFiles] = useState<File[]>([]);
+  const [pastedImages, setPastedImages] = useState<File[]>([]); // 粘贴的图片
+  const [pdfStatus, setPdfStatus] = useState('');
   const abortRef = useRef<AbortController | null>(null);
-  const [showAuth, setShowAuth] = useState(false);
-  const [authTab, setAuthTab] = useState<'register' | 'login'>('register');
-  const [showPaywall, setShowPaywall] = useState(false);
-  const [creatingOrder, setCreatingOrder] = useState(false);
-  const [payMethod, setPayMethod] = useState<'wechat' | 'alipay'>('wechat');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const pastedImageInputRef = useRef<HTMLInputElement>(null);
 
-  const [guestUsed] = useState(() => localStorage.getItem('guest_report_used') === 'true');
+  // ── 粘贴图片事件监听 ─────────────────────────────────────
+  useEffect(() => {
+    const handlePaste = async (e: ClipboardEvent) => {
+      const items = e.clipboardData?.items;
+      if (!items) return;
+      for (const item of Array.from(items)) {
+        if (item.type.startsWith('image/')) {
+          e.preventDefault();
+          const file = item.getAsFile();
+          if (!file) return;
+          const fileName = `粘贴图片_${Date.now()}.${item.type.split('/')[1]}`;
+          const renamedFile = new File([file], fileName, { type: item.type });
+          setPastedImages(prev => {
+            if (prev.length >= 5) { toast.warning('最多粘贴5张图片'); return prev; }
+            return [...prev, renamedFile];
+          });
+          toast.success('图片已粘贴，可点击预览或提交');
+          break;
+        }
+      }
+    };
+    window.addEventListener('paste', handlePaste);
+    return () => window.removeEventListener('paste', handlePaste);
+  }, []);
 
-  const [regName, setRegName] = useState('');
-  const [regEmail, setRegEmail] = useState('');
-  const [regPhone, setRegPhone] = useState('');
-  const [regPassword, setRegPassword] = useState('');
-  const [registering, setRegistering] = useState(false);
-
-  const [loginEmail, setLoginEmail] = useState('');
-  const [loginPassword, setLoginPassword] = useState('');
-  const [loggingIn, setLoggingIn] = useState(false);
-
-  const [showForgot, setShowForgot] = useState(false);
-  const [resetEmail, setResetEmail] = useState('');
-  const [resetting, setResetting] = useState(false);
-  const [resetSent, setResetSent] = useState(false);
-
-  const handleFileDrop = (e: React.DragEvent) => {
+  const handleFileDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     const dropped = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
-    if (dropped.length === 0) { toast.error('仅支持 PDF 格式文件'); return; }
-    setFiles(prev => [...prev, ...dropped].slice(0, 5));
-  };
+    if (!dropped.length) { toast.error('目前仅支持 PDF 文件'); return; }
+    setFiles(prev => {
+      const next = [...prev, ...dropped].slice(0, 5);
+      return next;
+    });
+  }, []);
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const picked = Array.from(e.target.files || []).filter(f => f.type === 'application/pdf');
-    setFiles(prev => [...prev, ...picked].slice(0, 5));
+  const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
+    const selected = Array.from(e.target.files || []).filter(f => f.type === 'application/pdf');
+    if (!selected.length) return;
+    setFiles(prev => {
+      const next = [...prev, ...selected].slice(0, 5);
+      return next;
+    });
     e.target.value = '';
-  };
+  }, []);
 
-  const removeFile = (idx: number) => setFiles(prev => prev.filter((_, i) => i !== idx));
+  const removeFile = useCallback((index: number) => {
+    setFiles(prev => prev.filter((_, i) => i !== index));
+  }, []);
 
-  const resetPlatforms = () =>
-    setPlatformStates(PLATFORMS.map(p => ({ ...p, status: 'pending' as PlatformStatus, count: 0 })));
+  const removePastedImage = useCallback((index: number) => {
+    setPastedImages(prev => prev.filter((_, i) => i !== index));
+  }, []);
 
-  const updatePlatform = (id: string, patch: Partial<PlatformState>) =>
+  const resetPlatforms = useCallback(() => {
+    const init: Record<string, { status: string; count: number }> = {};
+    for (const p of PLATFORMS) init[p.id] = { status: 'pending', count: 0 };
+    setPlatformStates(init);
+  }, []);
+
+  const updatePlatform = useCallback((id: string, patch: Partial<{ status: string; count: number }>) => {
     setPlatformStates(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
+  }, []);
 
-  // 核心：调用 magic_mirror_v2 SSE 流（支持 pdfText 文字内容）
-  const runMirrorV2 = async (guestMode: boolean, pdfText?: string): Promise<ReportData | null> => {
+  const runMirrorV2 = async (guestMode: boolean, pdfText?: string, imageFiles?: File[]): Promise<ReportData | null> => {
     resetPlatforms();
     setGeneratingPhase('searching');
-
-    // pdfText: 前端已提取的文字（极小体积）；pdfFiles: 保留向后兼容（仅小文件走 base64）
     const pdfFiles: { name: string; base64: string }[] = [];
     for (const file of files) {
-      if (file.size < 500_000) { // 只发 < 500KB 的文件做 base64
-        const buf = await file.arrayBuffer();
-        const bytes = new Uint8Array(buf);
-        let binary = '';
-        for (let i = 0; i < bytes.byteLength; i++) binary += String.fromCharCode(bytes[i]);
-        pdfFiles.push({ name: file.name, base64: btoa(binary) });
+      if (file.size < 500_000) {
+        const buffer = await file.arrayBuffer();
+        const base64 = btoa(new Uint8Array(buffer).reduce((d, b) => d + String.fromCharCode(b), ''));
+        pdfFiles.push({ name: file.name, base64 });
       }
     }
-
-    const { data: { session } } = await supabase.auth.getSession();
-    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL as string;
-    const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY as string;
-    const fnUrl = `${supabaseUrl}/functions/v1/magic_mirror_v2`;
-
-    const ctrl = new AbortController();
-    abortRef.current = ctrl;
-
-    const resp = await fetch(fnUrl, {
+    const abort = new AbortController();
+    abortRef.current = abort;
+    const session = (await supabase.auth.getSession()).data.session;
+    const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
+    const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
+    const fnUrl = `${SUPABASE_URL}/functions/v1/magic_mirror_v2`;
+    const body: Record<string, unknown> = {
+      subjectName, relationship, background, assets,
+      pdfFiles: pdfFiles.length ? pdfFiles : undefined,
+      pdfText: pdfText || undefined,
+      guestMode,
+      // 【新增】传递粘贴的图片
+      imageFile: imageFiles && imageFiles.length > 0 ? {
+        base64: await blobToBase64(imageFiles[0]),
+        mimeType: imageFiles[0].type,
+      } : undefined,
+    };
+    const res = await fetch(fnUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'apikey': anonKey,
-        ...(session?.access_token ? { Authorization: `Bearer ${session.access_token}` } : {}),
+        'apikey': SUPABASE_ANON_KEY,
+        ...(session ? { 'Authorization': `Bearer ${session.access_token}` } : {}),
       },
-      // 关键：pdfText 为纯文字（KB 级），base64 仅发小文件（<500KB）
-      body: JSON.stringify({ subjectName, relationship, background, assets, pdfFiles, pdfText, guestMode }),
-      signal: ctrl.signal,
+      body: JSON.stringify(body),
+      signal: abort.signal,
     });
-
-    if (!resp.ok || !resp.body) throw new Error(`请求失败 (${resp.status})`);
-
-    const reader = resp.body.getReader();
-    const decoder = new TextDecoder('utf-8');
+    if (!res.ok || !res.body) throw new Error(`${res.status}`);
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
     let buf = '';
     let reportData: ReportData | null = null;
-
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
       buf += decoder.decode(value, { stream: true });
-      const blocks = buf.split('\n\n');
-      buf = blocks.pop() ?? '';
-
-      for (const block of blocks) {
-        const lines = block.split('\n');
-        let eventName = '';
-        let dataStr = '';
+      const chunks = buf.split('\n\n');
+      buf = chunks.pop() ?? '';
+      for (const raw of chunks) {
+        const lines = raw.split('\n');
+        let eventName = '', dataStr = '';
         for (const line of lines) {
           if (line.startsWith('event: ')) eventName = line.slice(7).trim();
           if (line.startsWith('data: ')) dataStr = line.slice(6).trim();
         }
-        if (!dataStr) continue;
-        try {
-          const payload = JSON.parse(dataStr);
-          if (eventName === 'progress') {
-            updatePlatform(payload.id, { status: payload.status as PlatformStatus, count: payload.count ?? 0 });
-          } else if (eventName === 'searching_done') {
-            setGeneratingPhase('analyzing');
-          } else if (eventName === 'report_ready') {
-            reportData = payload.reportData as ReportData;
-          } else if (eventName === 'error') {
-            throw new Error(payload.message || '生成失败');
-          }
-        } catch (parseErr) {
-          if ((parseErr as Error).message !== 'JSON parse error') {
-            const msg = (parseErr as Error).message;
-            if (msg && msg !== 'Unexpected end of JSON input') throw parseErr;
-          }
+        if (eventName === 'progress' && dataStr) {
+          const d = JSON.parse(dataStr);
+          updatePlatform(d.id, { status: d.status === 'completed' ? 'completed' : 'searching', count: d.count ?? 0 });
+        }
+        if (eventName === 'searching_done' && dataStr) {
+          setGeneratingPhase('analyzing');
+        }
+        if (eventName === 'report_ready' && dataStr) {
+          const d = JSON.parse(dataStr);
+          reportData = d.reportData as ReportData;
+        }
+        if (eventName === 'error' && dataStr) {
+          const d = JSON.parse(dataStr);
+          throw new Error(d.message || '生成失败');
         }
       }
     }
     return reportData;
   };
 
-  const handleStartScreening = async () => {
-    if (!subjectName.trim()) { toast.error('请输入被筛查人姓名'); return; }
-    if (!user) {
-      if (guestUsed) { setAuthTab('register'); setShowAuth(true); return; }
-      await doGenerateGuest(); return;
-    }
-    if ((profile?.free_reports_remaining ?? 0) <= 0) { setShowPaywall(true); return; }
-    await doGenerate();
-  };
-
-  const doGenerateGuest = async () => {
-    setGenerating(true);
-    setPdfStatus('');
-    try {
-      let pdfText: string | undefined;
-      if (files.length > 0) {
-        setPdfStatus('📄 正在读取文件…');
-        const { totalText } = await processAllPDFFiles(files, (name, msg) => setPdfStatus(msg));
-        pdfText = totalText;
-        setPdfStatus('');
-      }
-      const reportData = await runMirrorV2(true, pdfText);
-      if (!reportData) throw new Error('no data');
-      localStorage.setItem('guest_report_used', 'true');
-      localStorage.setItem('guest_report_data', JSON.stringify(reportData));
-      toast.success(t('magicMirror.reportSuccess'));
-      navigate('/magic-mirror/report/guest');
-    } catch (err) {
-      if ((err as Error).name !== 'AbortError') toast.error(t('magicMirror.systemError'));
-    } finally {
-      setGenerating(false); setGeneratingPhase('searching'); setPdfStatus('');
-    }
-  };
-
   const doGenerate = async () => {
     setGenerating(true);
     setPdfStatus('');
     try {
-      let pdfText: string | undefined;
-      if (files.length > 0) {
-        setPdfStatus('📄 正在读取文件…');
-        const { totalText } = await processAllPDFFiles(files, (name, msg) => setPdfStatus(msg));
+      let pdfText = '';
+      if (files.length) {
+        setPdfStatus('正在处理上传文件…');
+        const { totalText } = await processAllPDFFiles(files, (name, s) => setPdfStatus(`${name}: ${s}`));
         pdfText = totalText;
-        setPdfStatus('');
       }
-      const reportData = await runMirrorV2(false, pdfText);
-      if (!reportData) throw new Error('no data');
-
-      const riskLevel = reportData.riskSignals.some(s => s.level === 'high') ? 'high'
-        : reportData.riskSignals.some(s => s.level === 'medium') ? 'medium' : 'low';
-
-      const report = await createReport(user!.id, subjectName, { relationship, background, assets }, riskLevel, reportData);
+      const guestMode = !user;
+      const reportData = await runMirrorV2(guestMode, pdfText, pastedImages);
+      if (!reportData) { toast.error('生成失败，请重试'); return; }
+      const riskLevel = reportData.riskSignals?.[0]?.level;
+      const key = riskLevel === 'high' ? 'paywall.riskDetected' : 'paywall.generated';
+      const report = await createReport({
+        subject_name: subjectName,
+        relationship,
+        background,
+        assets,
+        pdf_text: pdfText,
+        report_data: reportData,
+      });
       if (report) {
-        await updateFreeReports(user!.id, (profile?.free_reports_remaining ?? 1) - 1);
-        await refreshProfile();
-        toast.success(t('magicMirror.reportGenerated'));
-        navigate(`/magic-mirror/report/${report.id}`);
+        localStorage.setItem('report_data', JSON.stringify(reportData));
+        localStorage.setItem('report_id', String(report.id));
+        if (!user) {
+          const used = parseInt(guestUsed || '0') + 1;
+          localStorage.setItem('guest_used', String(used));
+        }
+        toast.success('报告生成成功！');
+        navigate('/report');
       } else {
-        toast.error(t('magicMirror.reportFail'));
+        setShowPaywall(true);
       }
     } catch (err) {
-      if ((err as Error).name !== 'AbortError') toast.error(t('magicMirror.systemError'));
+      if ((err as Error).name !== 'AbortError') toast.error((err as Error).message || '生成失败');
     } finally {
-      setGenerating(false); setGeneratingPhase('searching'); setPdfStatus('');
+      setGenerating(false);
+      setGeneratingPhase('searching');
+      setPdfStatus('');
     }
   };
 
-  useEffect(() => () => { abortRef.current?.abort(); }, []);
-
   const handleRegister = async () => {
-    if (!regName || !regEmail || !regPhone || !regPassword) { toast.error(t('register.fillAll')); return; }
+    if (!regName_ || !regEmail || !regPassword) { toast.error('请填写必填项'); return; }
     setRegistering(true);
-    const { error } = await signUpWithEmail(regEmail, regPassword, regName, regPhone);
+    const { error } = await supabase.auth.signUp({ email: regEmail, password: regPassword });
     setRegistering(false);
-    if (error) toast.error(error.message || t('register.registerFail'));
-    else { toast.success(t('register.registerSuccess')); setShowAuth(false); setTimeout(() => doGenerate(), 500); }
+    if (error) toast.error(error.message || '注册失败');
+    else { toast.success('注册成功，请登录'); setShowAuth(false); }
   };
 
   const handleLogin = async () => {
-    if (!loginEmail || !loginPassword) { toast.error(t('login.fillRequired')); return; }
+    if (!loginEmail || !loginPassword) { toast.error('请填写必填项'); return; }
     setLoggingIn(true);
-    const { error } = await signInWithEmail(loginEmail, loginPassword);
+    const { error } = await supabase.auth.signInWithPassword({ email: loginEmail, password: loginPassword });
     setLoggingIn(false);
-    if (error) toast.error(error.message || t('login.loginFail'));
-    else { toast.success(t('login.loginSuccess')); setShowAuth(false); setTimeout(() => doGenerate(), 500); }
+    if (error) toast.error(error.message || '登录失败');
+    else { toast.success('登录成功'); setShowAuth(false); setTimeout(() => doGenerate(), 500); }
   };
 
   const handleResetPassword = async () => {
-    if (!resetEmail) { toast.error('请输入邮箱地址'); return; }
+    if (!resetEmail) { toast.error('请输入邮箱'); return; }
     setResetting(true);
-    const { error } = await resetPassword(resetEmail);
+    const { error } = await supabase.auth.resetPasswordForEmail(resetEmail);
     setResetting(false);
-    if (error) toast.error(error.message || '发送失败，请稍后重试');
+    if (error) toast.error(error.message || '发送失败');
     else setResetSent(true);
   };
 
-  const completedCount = platformStates.filter(p => p.status === 'completed').length;
-  const totalSearchable = platformStates.filter(p => !p.limited).length;
-  const progressPct = totalSearchable > 0 ? Math.round((completedCount / totalSearchable) * 100) : 0;
+  const handlePayment = async () => {
+    setCreatingOrder(true);
+    try {
+      if (payMethod === 'wechat') {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/orders/create_wechat`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ report_id: localStorage.getItem('report_id'), }),
+        }).then(r => r.json());
+        if (res.pay_url) window.location.href = res.pay_url;
+      } else {
+        const res = await fetch(`${import.meta.env.VITE_API_URL}/orders/create_alipay`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ report_id: localStorage.getItem('report_id'), }),
+        }).then(r => r.json());
+        if (res.pay_url) window.location.href = res.pay_url;
+      }
+    } catch (err) {
+      toast.error('支付创建失败');
+    } finally {
+      setCreatingOrder(false);
+    }
+  };
+
+  const canGenerate = subjectName.trim().length > 0;
 
   return (
-    <div className="min-h-screen bg-background">
-      {/* Top Banner */}
-      <section className="bg-primary text-primary-foreground py-16">
-        <div className="container mx-auto px-4 text-center">
-          <div className="max-w-md mx-auto mb-6 rounded-2xl overflow-hidden shadow-2xl">
-            <img
-              src="https://miaoda-conversation-file.cdn.bcebos.com/user-buketv2zz56o/app-cc2fqeuowe81/20260614/image_1781445807493.png"
-              alt={t('magicMirror.title') + ' Magic Mirror'}
-              className="w-full h-auto"
-            />
+    <div className="min-h-screen bg-gradient-to-b from-slate-50 to-slate-100">
+      <div className="max-w-3xl mx-auto px-4 py-8 space-y-6">
+        {/* 标题 */}
+        <div className="text-center space-y-2">
+          <div className="flex justify-center gap-2">
+            <Bot className="w-8 h-8 text-blue-600" />
+            <h1 className="text-3xl font-bold text-slate-800">魔镜 · 照妖镜</h1>
           </div>
-          <h1 className="text-3xl md:text-4xl font-bold mb-3">🔮 {t('magicMirror.title')} Magic Mirror</h1>
-          <p className="text-lg font-medium text-accent mb-4">{t('magicMirror.slogan')}</p>
-          <p className="text-sm opacity-90 max-w-2xl mx-auto">{t('magicMirror.desc')}</p>
+          <p className="text-slate-500 text-sm">跨境家庭 · 关系风险初筛 · 3分钟获取报告</p>
         </div>
-      </section>
 
-      {/* Input + Search Area */}
-      <section className="py-12">
-        <div className="container mx-auto px-4 max-w-2xl space-y-6">
-
-          {/* File Upload */}
-          <Card>
-            <CardContent className="p-6">
-              <Label className="text-sm font-medium mb-3 block">{t('magicMirror.fileUpload')}</Label>
-              <div
-                onDrop={handleFileDrop}
-                onDragOver={e => e.preventDefault()}
-                className="border-2 border-dashed border-border rounded-lg p-8 text-center hover:border-primary/50 transition-colors"
-              >
-                <Upload className="w-12 h-12 mx-auto text-primary mb-3" />
-                <p className="text-sm text-muted-foreground">{t('magicMirror.dragDrop')}</p>
-                <p className="text-xs text-muted-foreground mt-1">支持文字 PDF 和扫描件 · 最多 5 个 · 不限大小</p>
-                <input type="file" multiple accept=".pdf" onChange={handleFileSelect} className="hidden" id="file-upload" />
-                <label htmlFor="file-upload" className="mt-4 inline-block cursor-pointer">
-                  <Button variant="default" size="default" asChild>
-                    <span className="flex items-center gap-2"><Upload className="w-4 h-4" />{t('common.select')}</span>
-                  </Button>
-                </label>
+        {/* 主卡片 */}
+        <Card>
+          <CardContent className="p-6 space-y-5">
+            {/* 被查人信息 */}
+            <div className="space-y-2">
+              <Label>被查人姓名 *</Label>
+              <Input placeholder="请输入被查人姓名（必填）" value={subjectName} onChange={e => setSubjectName(e.target.value)} className="text-base" />
+            </div>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <Label>与您的关系</Label>
+                <Input placeholder="如：配偶、合伙人" value={relationship} onChange={e => setRelationship(e.target.value)} />
               </div>
+            </div>
+            <div className="space-y-2">
+              <Label>其他背景（选填）</Label>
+              <Textarea placeholder="补充任何有助于筛查的背景信息…" value={background} onChange={e => setBackground(e.target.value)} rows={3} />
+            </div>
+
+            {/* 上传区域（含PDF和粘贴图片） */}
+            <div className="space-y-3">
+              <div
+                className="border-2 border-dashed border-slate-300 rounded-xl p-6 text-center cursor-pointer hover:border-blue-400 transition-colors"
+                onDragOver={e => e.preventDefault()}
+                onDrop={handleFileDrop}
+                onClick={() => fileInputRef.current?.click()}
+              >
+                <input ref={fileInputRef} type="file" accept="application/pdf" multiple className="hidden" onChange={handleFileSelect} />
+                <div className="flex flex-col items-center gap-2 text-slate-500">
+                  <Plus className="w-8 h-8" />
+                  <p className="text-sm font-medium">拖拽 PDF 或点击上传（最多5个）</p>
+                  <p className="text-xs">支持：PDF 文件（文字或扫描件）</p>
+                </div>
+              </div>
+
+              {/* 已上传的PDF列表 */}
               {files.length > 0 && (
                 <div className="mt-4 space-y-2">
                   {files.map((f, i) => (
-                    <div key={i} className="flex items-center gap-2 p-2 bg-secondary rounded text-sm">
-                      <FileText className="w-4 h-4 text-primary shrink-0" />
-                      <span className="flex-1 min-w-0 truncate">{f.name}</span>
-                      <span className="text-xs text-muted-foreground shrink-0">
-                        {f.size > 1024 * 1024 ? `${(f.size / 1024 / 1024).toFixed(1)}MB` : `${(f.size / 1024).toFixed(0)}KB`}
-                      </span>
-                      <button onClick={() => removeFile(i)} className="text-muted-foreground hover:text-destructive shrink-0">
-                        <X className="w-4 h-4" />
-                      </button>
+                    <div key={i} className="flex items-center gap-3 p-3 bg-slate-50 rounded-lg">
+                      <FileIcon className="w-5 h-5 text-blue-500 shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{f.name}</p>
+                        <p className="text-xs text-slate-400">{f.size > 1024 * 1024 ? `${(f.size / 1024 / 1024).toFixed(1)} MB` : `${(f.size / 1024).toFixed(0)} KB`}</p>
+                      </div>
+                      <button onClick={() => removeFile(i)} className="text-slate-400 hover:text-red-500 shrink-0"><X className="w-4 h-4" /></button>
                     </div>
                   ))}
                 </div>
               )}
+
+              {/* 粘贴图片提示 */}
+              <div className="border border-dashed border-blue-200 rounded-lg p-3 bg-blue-50">
+                <p className="text-xs text-blue-600 text-center">
+                  💡 直接 <kbd className="px-1 py-0.5 bg-blue-100 rounded text-xs font-mono">Ctrl+V</kbd> 粘贴图片（名片、截图等），最多5张
+                  {pastedImages.length > 0 && ` · 已粘贴 ${pastedImages.length} 张`}
+                </p>
+                {pastedImages.length > 0 && (
+                  <div className="flex gap-2 mt-2 flex-wrap">
+                    {pastedImages.map((img, i) => (
+                      <div key={i} className="relative group">
+                        <img
+                          src={URL.createObjectURL(img)}
+                          alt={`粘贴图片${i + 1}`}
+                          className="w-16 h-16 object-cover rounded border border-blue-200"
+                        />
+                        <button
+                          onClick={() => removePastedImage(i)}
+                          className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full text-xs flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                        >×</button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               {pdfStatus && (
-                <div className="mt-3 flex items-center gap-2 text-sm text-primary bg-primary/5 px-3 py-2 rounded">
-                  <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
-                  <span className="truncate">{pdfStatus}</span>
+                <div className="flex items-center gap-2 text-sm text-slate-500 bg-slate-50 rounded px-3 py-2">
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  {pdfStatus}
                 </div>
               )}
-            </CardContent>
-          </Card>
-
-          {/* Manual Input */}
-          <Card>
-            <CardContent className="p-6 space-y-4">
-              <div>
-                <Label htmlFor="subject-name">{t('magicMirror.nameLabel')} *</Label>
-                <Input id="subject-name" value={subjectName} onChange={e => setSubjectName(e.target.value)}
-                  placeholder={t('magicMirror.namePlaceholder')} className="mt-1" />
-              </div>
-              <div>
-                <Label htmlFor="relationship">{t('magicMirror.relationLabel')}</Label>
-                <Input id="relationship" value={relationship} onChange={e => setRelationship(e.target.value)}
-                  placeholder={t('magicMirror.relationPlaceholder')} className="mt-1" />
-              </div>
-              <div>
-                <Label htmlFor="background">{t('magicMirror.backgroundLabel')}</Label>
-                <Textarea id="background" value={background} onChange={e => setBackground(e.target.value)}
-                  placeholder={t('magicMirror.backgroundPlaceholder')} className="mt-1" rows={3} />
-              </div>
-              <div>
-                <Label htmlFor="assets">{t('magicMirror.assetsLabel')}</Label>
-                <Textarea id="assets" value={assets} onChange={e => setAssets(e.target.value)}
-                  placeholder={t('magicMirror.assetsPlaceholder')} className="mt-1" rows={3} />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Guest tip */}
-          {!user && (
-            <div className={`rounded-lg p-4 text-center text-sm font-medium border ${
-              guestUsed
-                ? 'bg-muted border-border text-muted-foreground'
-                : 'bg-accent/10 border-accent/20 text-accent'
-            }`}>
-              {guestUsed ? t('magicMirror.guestUsed', { count: 1 }) : t('magicMirror.guestFree')}
             </div>
-          )}
 
-          <Button onClick={handleStartScreening} disabled={generating}
-            className="w-full bg-accent text-accent-foreground hover:bg-accent/90 h-12 text-base">
-            {generating ? (
-              <><Loader2 className="w-5 h-5 mr-2 animate-spin" />正在检索多平台数据，请稍候…</>
-            ) : t('magicMirror.startBtn')}
-          </Button>
-
-          {/* ── 实时平台搜索进度面板 ── */}
-          {generating && (
-            <Card className="border-primary/30">
-              <CardContent className="p-5">
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="font-semibold text-sm flex items-center gap-2">
-                    <span className="text-lg">🪄</span> 魔镜正在为您筛查
-                  </h3>
-                  <Badge variant={generatingPhase === 'analyzing' ? 'default' : 'secondary'} className="text-xs">
-                    {generatingPhase === 'searching' ? '🔍 多平台检索中' : '🤖 AI 分析报告中'}
-                  </Badge>
+            {/* Manual Input */}
+            <details className="group">
+              <summary className="cursor-pointer text-sm text-slate-500 hover:text-slate-700 list-none flex items-center gap-1">
+                <span>展开补充信息</span>
+                <span className="text-xs group-open:rotate-90 transition-transform">▶</span>
+              </summary>
+              <div className="mt-3 space-y-3">
+                <div className="space-y-2">
+                  <Label>补充背景</Label>
+                  <Textarea placeholder="补充任何有助于筛查的背景信息…" value={background} onChange={e => setBackground(e.target.value)} rows={3} />
                 </div>
-
-                {/* 总进度条 */}
-                <div className="mb-4">
-                  <div className="flex justify-between text-xs text-muted-foreground mb-1">
-                    <span>检索进度</span>
-                    <span>{completedCount} / {totalSearchable} 平台</span>
-                  </div>
-                  <div className="w-full bg-muted rounded-full h-2 overflow-hidden">
-                    <div className="h-full bg-primary rounded-full transition-all duration-700 ease-out"
-                      style={{ width: `${generatingPhase === 'analyzing' ? 100 : progressPct}%` }} />
-                  </div>
+                <div className="space-y-2">
+                  <Label>资产/财务信息</Label>
+                  <Input placeholder="可选填写" value={assets} onChange={e => setAssets(e.target.value)} />
                 </div>
+              </div>
+            </details>
 
-                {/* 平台网格 */}
-                <div className="grid grid-cols-1 gap-1.5">
-                  {platformStates.map(p => (
-                    <div key={p.id} className={`flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-colors ${
-                      p.status === 'searching' ? 'bg-primary/10 border border-primary/20' :
-                      p.status === 'completed' && p.count > 0 ? 'bg-green-50 dark:bg-green-950/20' :
-                      p.status === 'limited' ? 'bg-amber-50 dark:bg-amber-950/20' :
-                      'bg-muted/40'
-                    }`}>
-                      <span className="text-base w-5 text-center shrink-0">{p.flag}</span>
-                      <span className="flex-1 min-w-0 font-medium truncate">{p.name}</span>
-                      {p.status === 'completed' && p.count > 0 && (
-                        <Badge variant="outline" className="text-xs text-green-700 border-green-300 shrink-0">
-                          {p.count} 条
-                        </Badge>
-                      )}
-                      {p.status === 'limited' && (
-                        <span className="text-xs text-amber-600 shrink-0">需人工核实</span>
-                      )}
-                      <PlatformIcon status={p.status} />
+            {/* 生成按钮 */}
+            {!user && parseInt(guestUsed || '0') >= 3 && (
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-700">
+                <AlertCircle className="w-4 h-4 inline mr-1" />免费额度已用完，请登录后继续
+              </div>
+            )}
+            <Button
+              size="lg"
+              className="w-full text-base"
+              disabled={!canGenerate || generating || (!user && parseInt(guestUsed || '0') >= 3)}
+              onClick={() => {
+                if (!user) {
+                  setShowAuth(true);
+                } else {
+                  doGenerate();
+                }
+              }}
+            >
+              {generating ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> 生成中…</> : user ? <><Sparkles className="w-4 h-4 mr-2" /> 启动魔镜筛查</> : '登录后启动筛查'}
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* 平台进度 */}
+        {generating && (
+          <Card className="border-primary/30">
+            <CardContent className="p-5">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-semibold text-sm flex items-center gap-2">
+                  <span className="text-lg">🤖</span> 魔镜正在为您检索
+                </h3>
+                <Badge variant={generatingPhase === 'analyzing' ? 'default' : 'secondary'} className="text-xs">
+                  {generatingPhase === 'searching' ? '🔍 平台检索中' : '🌱 AI分析报告中'}
+                </Badge>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {PLATFORMS.map(p => (
+                  <div key={p.id} className="flex items-center gap-2 text-sm">
+                    <PlatformIcon status={platformStates[p.id]?.status || 'pending'} />
+                    <span className="text-slate-600">{p.name}</span>
+                    {p.limited && <span className="text-xs text-slate-400">·需人工</span>}
+                    {platformStates[p.id]?.count > 0 && <span className="text-xs text-blue-500 ml-auto">{platformStates[p.id]!.count}</span>}
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-2 mt-4 pt-4 border-t text-xs text-slate-400">
+                <Shield className="w-3 h-3" /> <span>数据仅供参考，不构成法律意见</span>
+              </div>
+            </CardContent>
+          </Card>
+        )}
+
+        {/* Auth Dialog */}
+        {showAuth && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <Card className="w-full max-w-sm">
+              <CardHeader className="pb-2">
+                <div className="flex justify-between items-center">
+                  <CardTitle className="text-lg">登录 / 注册</CardTitle>
+                  <button onClick={() => setShowAuth(false)} className="text-slate-400 hover:text-slate-600"><X className="w-5 h-5" /></button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {!showForgot ? (
+                  <>
+                    <div className="space-y-2">
+                      <Label>手机号</Label>
+                      <Input placeholder="+1 234 567 8900" value={regPhone} onChange={e => setRegPhone(e.target.value)} />
                     </div>
-                  ))}
-                </div>
-
-                {generatingPhase === 'analyzing' && (
-                  <div className="mt-4 flex items-center gap-2 text-sm text-primary font-medium">
-                    <Loader2 className="w-4 h-4 animate-spin" />
-                    DeepSeek · Qwen · Llama 并行生成报告…
+                    <div className="space-y-2">
+                      <Label>密码</Label>
+                      <Input type="password" value={regPassword} onChange={e => setRegPassword(e.target.value)} />
+                    </div>
+                    <Button className="w-full" onClick={handleRegister} disabled={registering}>
+                      {registering ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> 注册中…</> : '注册'}
+                    </Button>
+                    <div className="border-t pt-3 space-y-2">
+                      <Input type="email" placeholder="邮箱" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} />
+                      <Input type="password" placeholder="密码" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} />
+                      <Button className="w-full" onClick={handleLogin} disabled={loggingIn}>
+                        {loggingIn ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> 登录中…</> : '登录'}
+                      </Button>
+                      <button onClick={() => { setShowForgot(true); setResetSent(false); }} className="w-full text-xs text-center text-slate-400 hover:text-slate-600">忘记密码？</button>
+                    </div>
+                  </>
+                ) : (
+                  <div className="py-4 text-center space-y-3">
+                    {!resetSent ? (
+                      <>
+                        <p className="text-sm text-slate-600">输入注册邮箱，重置密码</p>
+                        <Input type="email" placeholder="your@email.com" value={resetEmail} onChange={e => setResetEmail(e.target.value)} />
+                        <Button className="w-full" onClick={handleResetPassword} disabled={resetting}>
+                          {resetting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> 发送中…</> : '发送重置链接'}
+                        </Button>
+                      </>
+                    ) : (
+                      <div className="text-green-600 text-sm">✅ 邮件已发送，请查收</div>
+                    )}
+                    <button onClick={() => setShowForgot(false)} className="text-xs text-slate-400 hover:text-slate-600">返回登录</button>
                   </div>
                 )}
               </CardContent>
             </Card>
-          )}
-        </div>
-      </section>
-
-      {/* ── Auth Dialog ── */}
-      <Dialog open={showAuth} onOpenChange={setShowAuth}>
-        <DialogContent className="max-w-md">
-          <DialogHeader>
-            <DialogTitle>{authTab === 'register' ? '注册账号' : '登录账号'}</DialogTitle>
-            <DialogDescription>
-              {authTab === 'register' ? '注册后可查看完整报告并享受会员权益' : '登录以使用魔镜完整功能'}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="flex gap-2 mb-4">
-            <button onClick={() => setAuthTab('register')}
-              className={`flex-1 py-2 text-sm rounded-md border transition-colors ${authTab === 'register' ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
-              注册
-            </button>
-            <button onClick={() => setAuthTab('login')}
-              className={`flex-1 py-2 text-sm rounded-md border transition-colors ${authTab === 'login' ? 'bg-primary text-primary-foreground border-primary' : 'border-border hover:bg-muted'}`}>
-              登录
-            </button>
           </div>
-          {authTab === 'register' ? (
-            <div className="space-y-3">
-              <Input placeholder="姓名" value={regName} onChange={e => setRegName(e.target.value)} />
-              <Input placeholder="邮箱" type="email" value={regEmail} onChange={e => setRegEmail(e.target.value)} />
-              <Input placeholder="手机号" value={regPhone} onChange={e => setRegPhone(e.target.value)} />
-              <Input placeholder="密码" type="password" value={regPassword} onChange={e => setRegPassword(e.target.value)} />
-              <Button onClick={handleRegister} disabled={registering} className="w-full">
-                {registering ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />注册中…</> : '注册'}
-              </Button>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <Input placeholder="邮箱" type="email" value={loginEmail} onChange={e => setLoginEmail(e.target.value)} />
-              <Input placeholder="密码" type="password" value={loginPassword} onChange={e => setLoginPassword(e.target.value)} />
-              <Button onClick={handleLogin} disabled={loggingIn} className="w-full">
-                {loggingIn ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />登录中…</> : '登录'}
-              </Button>
-              <div className="text-center">
-                <button onClick={() => { setShowAuth(false); setShowForgot(true); }} className="text-xs text-muted-foreground hover:text-primary underline">
-                  忘记密码？
-                </button>
-              </div>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
+        )}
 
-      {/* ── Forgot Password Dialog ── */}
-      <Dialog open={showForgot} onOpenChange={setShowForgot}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>重置密码</DialogTitle>
-            <DialogDescription>输入注册邮箱，我们会发送重置链接</DialogDescription>
-          </DialogHeader>
-          {resetSent ? (
-            <div className="text-center py-4 text-sm text-green-600">
-              ✅ 发送成功！请查收邮件（含链接 1 小时内有效）
-            </div>
-          ) : (
-            <div className="space-y-3">
-              <Input placeholder="邮箱地址" type="email" value={resetEmail} onChange={e => setResetEmail(e.target.value)} />
-              <Button onClick={handleResetPassword} disabled={resetting} className="w-full">
-                {resetting ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" />发送中…</> : '发送重置链接'}
-              </Button>
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-
-      {/* ── Paywall Dialog ── */}
-      <Dialog open={showPaywall} onOpenChange={setShowPaywall}>
-        <DialogContent className="max-w-sm">
-          <DialogHeader>
-            <DialogTitle>免费次数已用完</DialogTitle>
-            <DialogDescription>解锁魔镜完整功能，继续筛查</DialogDescription>
-          </DialogHeader>
-          <div className="space-y-3">
-            <div className="border rounded-lg p-4 text-center">
-              <div className="text-2xl font-bold text-primary mb-1">¥99 / 次</div>
-              <div className="text-xs text-muted-foreground">单次购买，不限报告数量</div>
-            </div>
-            <div className="flex gap-2">
-              <button onClick={() => setPayMethod('wechat')}
-                className={`flex-1 py-2 text-sm rounded-md border transition-colors ${payMethod === 'wechat' ? 'bg-green-600 text-white border-green-600' : 'border-border hover:bg-muted'}`}>
-                微信支付
-              </button>
-              <button onClick={() => setPayMethod('alipay')}
-                className={`flex-1 py-2 text-sm rounded-md border transition-colors ${payMethod === 'alipay' ? 'bg-blue-600 text-white border-blue-600' : 'border-border hover:bg-muted'}`}>
-                支付宝
-              </button>
-            </div>
-            <Button onClick={async () => {
-              if (!user) return;
-              setCreatingOrder(true);
-              try {
-                if (payMethod === 'wechat') {
-                  const order = await createPaymentOrder(user.id);
-                  if (order?.paymentUrl) window.location.href = order.paymentUrl;
-                } else {
-                  const order = await createAlipayOrder(user.id);
-                  if (order?.paymentUrl) window.location.href = order.paymentUrl;
-                }
-              } catch { toast.error('下单失败'); }
-              setCreatingOrder(false);
-            }}
-              disabled={creatingOrder}
-              className="w-full bg-accent text-accent-foreground hover:bg-accent/90"
-            >
-              {creatingOrder ? (
-                <><Loader2 className="w-4 h-4 mr-2 animate-spin" />{t('magicMirror.creatingOrder')}</>
-              ) : payMethod === 'wechat' ? t('magicMirror.wechatBuy') : t('magicMirror.alipayBuy')}
-            </Button>
+        {/* Paywall */}
+        {showPaywall && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+            <Card className="w-full max-w-sm">
+              <CardContent className="p-6 text-center space-y-4">
+                <div className="text-4xl">🔒</div>
+                <div>
+                  <h3 className="font-semibold text-lg">完整报告解锁</h3>
+                  <p className="text-2xl font-bold text-blue-600 mt-1">¥99 / 次</p>
+                  <p className="text-xs text-slate-400 mt-1">含详细风险分析 · 行动清单 · 法律建议</p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setPayMethod('wechat')} className={`flex-1 py-2 rounded-lg border text-sm ${payMethod === 'wechat' ? 'border-green-500 bg-green-50 text-green-700' : 'border-slate-200'}`}>微信购买</button>
+                  <button onClick={() => setPayMethod('alipay')} className={`flex-1 py-2 rounded-lg border text-sm ${payMethod === 'alipay' ? 'border-blue-500 bg-blue-50 text-blue-700' : 'border-slate-200'}`}>支付宝购买</button>
+                </div>
+                <Button className="w-full" onClick={handlePayment} disabled={creatingOrder}>
+                  {creatingOrder ? <><Loader2 className="w-4 h-4 mr-2 animate-spin" /> 创建订单…</> : payMethod === 'wechat' ? '微信支付 ¥99' : '支付宝支付 ¥99'}
+                </Button>
+              </CardContent>
+            </Card>
           </div>
-        </DialogContent>
-      </Dialog>
+        )}
+      </div>
     </div>
+  );
+}
+
+// 辅助：File → Base64
+function blobToBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      const result = reader.result as string;
+      resolve(result.split(',')[1] || '');
+    };
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+// 辅助：File 图标
+function FileIcon({ className }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+      <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+      <polyline points="14,2 14,8 20,8" />
+    </svg>
   );
 }
