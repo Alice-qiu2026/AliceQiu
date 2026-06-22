@@ -502,7 +502,7 @@ reportData = d.reportData as ReportData;
                 )}
                 <div className="flex flex-col items-center gap-2 text-slate-500">
                   <Plus className="w-8 h-8" />
-                  <p className="text-sm font-medium">拖拽 PDF 或点击上传（最多5个）</p>
+                     <p className="text-xs">支持: PDF 文件（文字或扫描件）和图片（拍照或相册）</p>
                   <p className="text-xs">支持：PDF 文件（文字或扫描件）</p>
                   <p className="text-xs text-blue-500 mt-1">
                     💡 也可直接 <kbd className="px-1 py-0.5 bg-blue-100 rounded text-xs font-mono border border-blue-200">Ctrl+V</kbd> 粘贴图片（名片、截图等）
