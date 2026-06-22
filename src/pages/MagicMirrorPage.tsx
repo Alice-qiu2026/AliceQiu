@@ -275,7 +275,12 @@ export default function MagicMirrorPage() {
     }
     const abort = new AbortController();
     abortRef.current = abort;
-    const session = (await supabase.auth.getSession()).data.session;
+    let session = null;
+try {
+  session = (await supabase.auth.getSession()).data.session;
+} catch {
+  // ignore auth errors
+}
     const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
     const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY;
     const fnUrl = `${SUPABASE_URL}/functions/v1/magic_mirror_v2`;
