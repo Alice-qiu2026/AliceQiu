@@ -226,8 +226,8 @@ export default function MagicMirrorPage() {
 
   const handleFileDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
-    const dropped = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf');
-    if (!dropped.length) { toast.error('目前仅支持 PDF 文件'); return; }
+    const dropped = Array.from(e.dataTransfer.files).filter(f => f.type === 'application/pdf' || f.type.startsWith('image/'));
+    if (!dropped.length) { toast.error('目前仅支持 PDF 或图片文件'); return; }
     setFiles(prev => {
       const next = [...prev, ...dropped].slice(0, 5);
       return next;
@@ -235,7 +235,7 @@ export default function MagicMirrorPage() {
   }, []);
 
   const handleFileSelect = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const selected = Array.from(e.target.files || []).filter(f => f.type === 'application/pdf');
+    const selected = Array.from(e.target.files || []).filter(f => f.type === 'application/pdf' || f.type.startsWith('image/'));
     if (!selected.length) return;
     setFiles(prev => {
       const next = [...prev, ...selected].slice(0, 5);
@@ -475,7 +475,7 @@ export default function MagicMirrorPage() {
                 onDrop={handleFileDrop}
                 onClick={() => fileInputRef.current?.click()}
               >
-                <input ref={fileInputRef} type="file" accept="application/pdf" multiple className="hidden" onChange={handleFileSelect} />
+                <input ref={fileInputRef} type="file" accept="application/pdf,image/*" capture="environment" multiple className="hidden" onChange={handleFileSelect} />
                 {/* 粘贴图片预览（显示在上传区域内） */}
                 {pastedImages.length > 0 && (
                   <div className="flex justify-center gap-2 mb-3 flex-wrap">
