@@ -327,7 +327,8 @@ export default function MagicMirrorPage() {
         }
         if (eventName === 'report_ready' && dataStr) {
           const d = JSON.parse(dataStr);
-          reportData = d.reportData as ReportData;
+reportData = d.reportData as ReportData;
+          reportData.riskLevel = reportData.riskSignals?.[0]?.level || 'unknown';
         }
         if (eventName === 'error' && dataStr) {
           const d = JSON.parse(dataStr);
