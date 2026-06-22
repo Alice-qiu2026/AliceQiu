@@ -140,31 +140,15 @@ function buildPrioritySearchTasks(
   return tasks;
 }
 
-// ── 平台配置（只列可真实查询的平台）────────────────────────
 const SEARCH_PLATFORMS = [
-  { id: 'baidu', name: '百度搜索', query: (n: string) => `"${n}" 个人信息 背景 履历` },
   { id: 'google', name: 'Google 搜索', query: (n: string) => `"${n}" background profile news` },
   { id: 'news_cn', name: '新闻媒体（中文）', query: (n: string) => `"${n}" 新华网 OR 人民网 OR 央视网 OR 新浪新闻` },
   { id: 'news_en', name: '新闻媒体（英文）', query: (n: string) => `"${n}" CBC OR "Global News" OR CTV site:cbc.ca OR site:globalnews.ca` },
-  { id: 'weibo', name: '微博', query: (n: string) => `site:weibo.com "${n}"` },
-  { id: 'zhihu', name: '知乎', query: (n: string) => `site:zhihu.com "${n}"` },
   { id: 'wechat', name: '微信公众号', query: (n: string) => `"${n}" 公众号 文章` },
-  { id: 'xiaohongshu', name: '小红书', query: (n: string) => `site:xiaohongshu.com "${n}"` },
-  { id: 'douyin', name: '抖音/TikTok', query: (n: string) => `"${n}" 抖音 OR tiktok 视频` },
-  { id: 'bilibili', name: 'B站', query: (n: string) => `site:bilibili.com "${n}"` },
-  { id: 'toutiao', name: '今日头条', query: (n: string) => `site:toutiao.com "${n}"` },
-  { id: 'github', name: 'GitHub（技术背景）', query: (n: string) => `site:github.com "${n}"` },
+  { id: 'xiaohongshu', name: '小红书', query: (n: string) => `"${n}" site:xiaohongshu.com` },
+  { id: 'douyin', name: '抖音/TikTok', query: (n: string) => `"${n}" 抖音 OR tiktok` },
+  { id: 'github', name: 'GitHub（技术背景）', query: (n: string) => `"${n}" site:github.com` },
 ];
-
-// 需人工核实的平台（无公开API，如实标注，不虚假勾选）
-const LIMITED_PLATFORMS = [
-  { id: 'tianyancha', name: '天眼查 / 企查查', note: '需登录账号手动查询，本系统未接入' },
-  { id: 'court', name: '裁判文书网 / 执行信息网', note: '需登录账号手动查询，本系统未接入' },
-  { id: 'linkedin', name: 'LinkedIn', note: '需账号登录，本系统未接入' },
-  { id: 'canada_corp', name: 'Corporations Canada', note: '需手动检索 corporationscanada.ic.gc.ca' },
-  { id: 'canLII', name: 'CanLII（加拿大法律）', note: '需手动检索 canlii.org' },
-];
-
 // ── SSE 辅助 ──────────────────────────────────────────────
 function makeSSE(event: string, data: unknown): string {
   return `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
