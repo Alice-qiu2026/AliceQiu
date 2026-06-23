@@ -33,23 +33,19 @@ import type { Report } from '@/types/types'
 import type { CertificationApplication } from '@/types/certification'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
-
 const SUPABASE_URL = (import.meta.env.VITE_SUPABASE_URL as string) || ''
 const SUPABASE_ANON_KEY = (import.meta.env.VITE_SUPABASE_ANON_KEY as string) || ''
-
 const riskLabels: Record<string, string> = {
   high: '🔴 高风险',
   medium: '🟡 中风险',
   low: '🟢 低风险',
 }
-
 const statusLabels: Record<string, string> = {
   pending: '待处理',
   processing: '生成中',
   completed: '已完成',
   updating: '更新中',
 }
-
 function getDaysUntilExpiry(expiresAt: string | null | undefined): number | null {
   if (!expiresAt) return null
   const exp = new Date(expiresAt).getTime()
@@ -57,7 +53,6 @@ function getDaysUntilExpiry(expiresAt: string | null | undefined): number | null
   const diff = exp - now
   return diff > 0 ? Math.ceil(diff / (1000 * 60 * 60 * 24)) : 0
 }
-
 function getMembershipLabel(type: string | undefined) {
   switch (type) {
     case 'premium':
@@ -68,7 +63,6 @@ function getMembershipLabel(type: string | undefined) {
       return '免费会员'
   }
 }
-
 export default function MemberPage() {
   const { t } = useTranslation()
   const { user, profile, session } = useAuth()
@@ -83,10 +77,8 @@ export default function MemberPage() {
   const [showGiftDialog, setShowGiftDialog] = useState(false)
   const [claimCode, setClaimCode] = useState('')
   const [giftLoading, setGiftLoading] = useState(false)
-
   const daysLeft = getDaysUntilExpiry(profile?.membership_expires_at)
   const isPaidMember = profile?.membership_type === 'standard' || profile?.membership_type === 'premium'
-
   useEffect(() => {
     if (user) {
       Promise.all([
@@ -104,7 +96,6 @@ export default function MemberPage() {
           setShowReminder(true)
         }
       })
-
       // 加载礼品卡余额
       if (session?.access_token) {
         fetch(`${SUPABASE_URL}/functions/v1/Gift-card?action=balance`, {
@@ -116,7 +107,6 @@ export default function MemberPage() {
       }
     }
   }, [user, session])
-
   const handleSendReminder = async () => {
     if (!user) return
     setSendingReminder(true)
@@ -131,7 +121,6 @@ export default function MemberPage() {
       toast.error(result.error || '发送失败')
     }
   }
-
   const handleClaimGift = async () => {
     if (!claimCode.trim() || !session?.access_token) return
     setGiftLoading(true)
@@ -162,7 +151,6 @@ export default function MemberPage() {
     }
     setGiftLoading(false)
   }
-
   if (!user) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
@@ -175,7 +163,6 @@ export default function MemberPage() {
       </div>
     )
   }
-
   if (loading) {
     return (
       <div className="flex flex-col items-center justify-center min-h-[60vh]">
@@ -184,7 +171,6 @@ export default function MemberPage() {
       </div>
     )
   }
-
   return (
     <div className="max-w-4xl mx-auto px-4 py-8 space-y-6">
       {/* 用户信息 */}
@@ -216,7 +202,6 @@ export default function MemberPage() {
           </div>
         </CardContent>
       </Card>
-
       {/* 管理员入口 */}
       {profile?.role === 'admin' && (
         <Card className="border-blue-300 bg-blue-50">
@@ -235,7 +220,6 @@ export default function MemberPage() {
           </CardContent>
         </Card>
       )}
-
       {/* 我的邀请码 + 分享推广 */}
       <div className="grid md:grid-cols-2 gap-4">
         {/* 邀请码 */}
@@ -267,7 +251,6 @@ export default function MemberPage() {
             </p>
           </CardContent>
         </Card>
-
         {/* 礼品卡余额 */}
         <Card className="border-yellow-200 bg-yellow-50">
           <CardContent className="pt-6">
@@ -289,7 +272,6 @@ export default function MemberPage() {
             </Button>
           </CardContent>
         </Card>
-
         {/* 分享按钮 */}
         <Card className="md:col-span-2">
           <CardContent className="pt-6">
@@ -325,7 +307,6 @@ export default function MemberPage() {
           </CardContent>
         </Card>
       </div>
-
       {/* 到期提醒弹窗 */}
       <Dialog open={showReminder} onOpenChange={setShowReminder}>
         <DialogContent>
@@ -350,7 +331,6 @@ export default function MemberPage() {
           </div>
         </DialogContent>
       </Dialog>
-
       {/* 提醒记录 */}
       {reminders.length > 0 && (
         <Card>
@@ -371,7 +351,6 @@ export default function MemberPage() {
           </CardContent>
         </Card>
       )}
-
       {/* 兑换礼品码弹窗 */}
       <Dialog open={showGiftDialog} onOpenChange={setShowGiftDialog}>
         <DialogContent>
@@ -405,7 +384,6 @@ export default function MemberPage() {
           </div>
         </DialogContent>
       </Dialog>
-
       {/* 认证申请记录 */}
       <div>
         <h3 className="font-bold text-lg mb-3 flex items-center gap-2">
@@ -479,7 +457,6 @@ export default function MemberPage() {
           </div>
         )}
       </div>
-
       {/* 报告列表 */}
       <div>
         <h3 className="font-bold text-lg mb-3 flex items-center gap-2">
