@@ -8,8 +8,8 @@ import { Badge } from '@/components/ui/badge';
 import { Textarea } from '@/components/ui/textarea';
 import { Loader2, Bot, Shield, AlertCircle, CheckCircle2, XCircle, X, Plus, Search, Sparkles, CreditCard, QrCode, Copy } from 'lucide-react';
 import { toast } from 'sonner';
-import { createReport } from '../lib/api';
-import { supabase } from '../lib/supabase';
+import { createReport } from '@/services/api';
+import { supabase } from '@/db/supabase';
 import type { ReportData } from '../types';
 import { useTranslation } from 'react-i18next';
 
