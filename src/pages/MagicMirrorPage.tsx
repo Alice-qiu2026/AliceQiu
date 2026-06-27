@@ -62,7 +62,7 @@ function extractTextFromPdf(file: File): Promise<string> {
           script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
           document.head.appendChild(script);
           await new Promise(r => script.onload = r);
-          (window as unknown as Record<string, unknown>).pdfjsLib = pdfjsLib;
+          pdfjsLib = (window as unknown as Record<string, unknown>).pdfjsLib;
         }
         (window as unknown as Record<string, unknown>).pdfjsLib.GlobalWorkerOptions.workerSrc =
           'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
@@ -98,7 +98,7 @@ async function ocrPdfWithCanvas(file: File, onProgress: (p: string) => void): Pr
       s.onload = () => resolve();
       document.head.appendChild(s);
     });
-    (window as unknown as Record<string, unknown>).pdfjsLib = pdfjsLib;
+    pdfjsLib = (window as unknown as Record<string, unknown>).pdfjsLib;
   }
   (window as unknown as Record<string, unknown>).pdfjsLib.GlobalWorkerOptions.workerSrc =
     'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
