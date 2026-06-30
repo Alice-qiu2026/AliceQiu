@@ -56,7 +56,7 @@ function extractTextFromPdf(file: File): Promise<string> {
     reader.onload = async (e) => {
       try {
         const typedArray = new Uint8Array(e.target!.result as ArrayBuffer);
-        const pdfjsLib = (window as unknown as Record<string, unknown>).pdfjsLib;
+        let pdfjsLib = (window as unknown as Record<string, unknown>).pdfjsLib;
         if (!pdfjsLib) {
           const script = document.createElement('script');
           script.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
@@ -90,7 +90,7 @@ async function ocrPdfWithCanvas(file: File, onProgress: (p: string) => void): Pr
   const uint8 = new Uint8Array(arrayBuffer);
   const binaryStr = Array.from(uint8).map(b => String.fromCharCode(b)).join('');
   const base64 = btoa(binaryStr);
-  const pdfjsLib = (window as unknown as Record<string, unknown>).pdfjsLib;
+  let pdfjsLib = (window as unknown as Record<string, unknown>).pdfjsLib;
   if (!pdfjsLib) {
     await new Promise<void>((resolve) => {
       const s = document.createElement('script');
