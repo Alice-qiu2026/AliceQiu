@@ -30,23 +30,21 @@ function PlatformIcon({ status }: { status: string }) {
 }
 
 const PLATFORMS = [
-  { id: 'baidu', name: '百度搜索', flag: '🔍' },
+  { id: 'baidu', name: '百度搜索', flag: '' },
   { id: 'google', name: 'Google', flag: '🔍' },
   { id: 'weibo', name: '微博', flag: '📣' },
   { id: 'zhihu', name: '知乎', flag: '💬' },
-  [
-    { id: 'wechat', name: '微信公众号', flag: '💬' },
-    { id: 'toutiao', name: '今日头条', flag: '📰' },
-    { id: 'douyin', name: '抖音/TikTok', flag: '🎵' },
-    { id: 'bilibili', name: 'B站', flag: '📺' },
-    { id: 'xiaohongshu', name: '小红书', flag: '📕' },
-    { id: 'news', name: '新闻/年鉴', flag: '📡' },
-    { id: 'github', name: 'GitHub', flag: '🐙' },
-    { id: 'pdf', name: '能查的都在', flag: '📄' },
-    { id: 'tianyanchu', name: '天眼查', flag: '🔎', limited: true },
-    { id: 'court', name: '裁判文书', flag: '⚖️', limited: true },
-    { id: 'linkedin', name: 'LinkedIn', flag: '💼', limited: true },
-  ].flat(),
+  { id: 'wechat', name: '微信公众号', flag: '💬' },
+  { id: 'toutiao', name: '今日头条', flag: '📰' },
+  { id: 'douyin', name: '抖音/TikTok', flag: '' },
+  { id: 'bilibili', name: 'B站', flag: '' },
+  { id: 'xiaohongshu', name: '小红书', flag: '' },
+  { id: 'news', name: '新闻/年鉴', flag: '' },
+  { id: 'github', name: 'GitHub', flag: '🐙' },
+  { id: 'pdf', name: '能查的都在', flag: '📄' },
+  { id: 'tianyanchu', name: '天眼查', flag: '🔎', limited: true },
+  { id: 'court', name: '裁判文书', flag: '⚖️', limited: true },
+  { id: 'linkedin', name: 'LinkedIn', flag: '💼', limited: true },
 ];
 
 // ── PDF文字提取（pdfjs-dist + ocr.space）───────────────────
@@ -259,7 +257,7 @@ export default function MagicMirrorPage() {
   }, []);
 
   const updatePlatform = useCallback((id: string, patch: Partial<{ status: string; count: number }>) => {
-    setPlatformStates(prev => prev.map(p => p.id === id ? { ...p, ...patch } : p));
+    setPlatformStates(prev => ({ ...prev, [id]: { ...prev[id], ...patch } }));
   }, []);
 
   const runMirrorV2 = async (guestMode: boolean, pdfText?: string, imageFiles?: File[]): Promise<ReportData | null> => {
